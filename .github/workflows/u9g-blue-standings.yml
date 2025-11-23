@@ -1,0 +1,124 @@
+name: U9G Blue Standings Weekly Email
+
+on:
+  schedule:
+    - cron: "0 17 * * FRI"   # Friday at 5pm (UTC-adjust as needed)
+  workflow_dispatch:
+
+jobs:
+  standings:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests beautifulsoup4 openai
+
+    - name: Fetch EMSA Schedule Page
+      run: |
+        python << 'EOF'
+        import requests
+        from bs4 import BeautifulSoup
+
+        url = "https://emsamain.com/schedules/"
+        response = requests.get(url)
+        response.raise_for_status()
+
+        # Save raw HTML for parsing in next step
+        with open("schedule.html", "w", encoding="utf-8") as f:
+            f.write(response.text)
+        EOF
+
+    - name: Extract U9G Blue Games
+      run: |
+        python << 'EOF'
+        from bs4 import BeautifulSoup
+
+        with open("schedule.html", "r", encoding="utf-8") as f:
+            html = f.read()
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Extract all text (site is dynamic so raw HTML is used)
+        text = soup.get_text(separator="\n")
+
+        # Save extracted text for ChatGPT
+        with open("games.txt", "w", encoding="utf-8") as f:
+            f.write(text)
+        EOF
+
+    - name: Generate Standings with ChatGPT
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        python << 'EOF'
+        import openai
+        import json
+
+        openai.api_key = "${OPENAI_API_KEY}"
+
+        with open("games.txt", "r", encoding="utf-8") as f:
+            games_text = f.read()
+
+        prompt = f"""
+        Here is a full text dump of a soccer schedule webpage. Extract only completed
+        games from the U9G Blue division. Ignore future-dated games and BYE games.
+        Calculate standings using:
+        - 3 points for a win
+        - 1 point for a draw
+        - 0 points for a loss
+
+        Return a clean table in this format:
+
+        Team | GP | W | D | L | GF | GA | GD | Points
+
+        Here is the schedule text:
+        {games_text}
+        """
+
+        client = openai.OpenAI()
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        standings = response.choices[0].message["content"]
+
+        with open("standings.txt", "w", encoding="utf-8") as f:
+            f.write(standings)
+        EOF
+
+    - name: Send Email with Gmail SMTP
+      env:
+        SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+        SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+        SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      run: |
+        python << 'EOF'
+        import smtplib
+        from email.mime.text import MIMEText
+
+        with open("standings.txt", "r", encoding="utf-8") as f:
+            standings = f.read()
+
+        msg = MIMEText(standings)
+        msg["Subject"] = "U9G Blue Weekly Standings"
+        msg["From"] = "${SMTP_USERNAME}"
+        msg["To"] = "tonyvanherk@gmail.com"
+
+        with smtplib.SMTP("${SMTP_SERVER}", ${SMTP_PORT}) as server:
+            server.starttls()
+            server.login("${SMTP_USERNAME}", "${SMTP_PASSWORD}")
+            server.send_message(msg)
+        EOF
