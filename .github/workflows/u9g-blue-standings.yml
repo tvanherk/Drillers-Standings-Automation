@@ -21,15 +21,24 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4 openai
 
-    - name: Fetch EMSA Schedule Page
+     - name: Fetch EMSA Schedule Page
       run: |
         python << 'EOF'
         import requests
         import sys
 
+        url = "https://emsamain.com/schedules/"
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+        }
+
         try:
-            url = "https://emsamain.com/schedules/"
-            response = requests.get(url, timeout=30)
+            response = requests.get(url, headers=headers, timeout=30)
             response.raise_for_status()
         except Exception as e:
             print("❌ ERROR: Failed to fetch schedule URL.")
