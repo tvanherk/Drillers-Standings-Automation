@@ -25,33 +25,59 @@ jobs:
       run: |
         python << 'EOF'
         import requests
-        from bs4 import BeautifulSoup
+        import sys
 
-        url = "https://emsamain.com/schedules/"
-        response = requests.get(url)
-        response.raise_for_status()
+        try:
+            url = "https://emsamain.com/schedules/"
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+        except Exception as e:
+            print("❌ ERROR: Failed to fetch schedule URL.")
+            print(e)
+            sys.exit(1)
 
-        # Save raw HTML for parsing in next step
-        with open("schedule.html", "w", encoding="utf-8") as f:
-            f.write(response.text)
+        try:
+            with open("schedule.html", "w", encoding="utf-8") as f:
+                f.write(response.text)
+        except Exception as e:
+            print("❌ ERROR: Failed to save schedule.html")
+            print(e)
+            sys.exit(1)
         EOF
 
     - name: Extract U9G Blue Games
       run: |
         python << 'EOF'
+        import sys
         from bs4 import BeautifulSoup
 
-        with open("schedule.html", "r", encoding="utf-8") as f:
-            html = f.read()
+        try:
+            with open("schedule.html", "r", encoding="utf-8") as f:
+                html = f.read()
+        except Exception as e:
+            print("❌ ERROR: Could not read schedule.html")
+            print(e)
+            sys.exit(1)
 
-        soup = BeautifulSoup(html, "html.parser")
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+            text = soup.get_text(separator="\n")
+        except Exception as e:
+            print("❌ ERROR: Failed to parse HTML")
+            print(e)
+            sys.exit(1)
 
-        # Extract all text (site is dynamic so raw HTML is used)
-        text = soup.get_text(separator="\n")
+        if not text.strip():
+            print("❌ ERROR: Extracted text is empty — website may have changed or blocked scraping.")
+            sys.exit(1)
 
-        # Save extracted text for ChatGPT
-        with open("games.txt", "w", encoding="utf-8") as f:
-            f.write(text)
+        try:
+            with open("games.txt", "w", encoding="utf-8") as f:
+                f.write(text)
+        except Exception as e:
+            print("❌ ERROR: Failed to save games.txt")
+            print(e)
+            sys.exit(1)
         EOF
 
     - name: Generate Standings with ChatGPT
@@ -59,13 +85,22 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       run: |
         python << 'EOF'
+        import sys
         import openai
-        import json
 
-        openai.api_key = "${OPENAI_API_KEY}"
+        client = openai.OpenAI(api_key="${OPENAI_API_KEY}")
 
-        with open("games.txt", "r", encoding="utf-8") as f:
-            games_text = f.read()
+        try:
+            with open("games.txt", "r", encoding="utf-8") as f:
+                games_text = f.read()
+        except Exception as e:
+            print("❌ ERROR: Could not read games.txt")
+            print(e)
+            sys.exit(1)
+
+        if len(games_text.strip()) < 50:
+            print("❌ ERROR: games.txt appears too small — extraction likely failed.")
+            sys.exit(1)
 
         prompt = f"""
         Here is a full text dump of a soccer schedule webpage. Extract only completed
@@ -83,17 +118,28 @@ jobs:
         {games_text}
         """
 
-        client = openai.OpenAI()
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            standings = response.choices[0].message["content"]
+        except Exception as e:
+            print("❌ ERROR: ChatGPT API call failed")
+            print(e)
+            sys.exit(1)
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
-        )
+        if not standings or len(standings.strip()) == 0:
+            print("❌ ERROR: ChatGPT returned empty standings")
+            sys.exit(1)
 
-        standings = response.choices[0].message["content"]
-
-        with open("standings.txt", "w", encoding="utf-8") as f:
-            f.write(standings)
+        try:
+            with open("standings.txt", "w", encoding="utf-8") as f:
+                f.write(standings)
+        except Exception as e:
+            print("❌ ERROR: Failed to write standings.txt")
+            print(e)
+            sys.exit(1)
         EOF
 
     - name: Send Email with Gmail SMTP
@@ -105,18 +151,33 @@ jobs:
       run: |
         python << 'EOF'
         import smtplib
+        import sys
         from email.mime.text import MIMEText
 
-        with open("standings.txt", "r", encoding="utf-8") as f:
-            standings = f.read()
+        try:
+            with open("standings.txt", "r", encoding="utf-8") as f:
+                standings = f.read()
+        except Exception as e:
+            print("❌ ERROR: Could not read standings.txt")
+            print(e)
+            sys.exit(1)
+
+        if not standings.strip():
+            print("❌ ERROR: standings.txt is empty")
+            sys.exit(1)
 
         msg = MIMEText(standings)
         msg["Subject"] = "U9G Blue Weekly Standings"
         msg["From"] = "${SMTP_USERNAME}"
         msg["To"] = "tonyvanherk@gmail.com"
 
-        with smtplib.SMTP("${SMTP_SERVER}", ${SMTP_PORT}) as server:
-            server.starttls()
-            server.login("${SMTP_USERNAME}", "${SMTP_PASSWORD}")
-            server.send_message(msg)
+        try:
+            with smtplib.SMTP("${SMTP_SERVER}", ${SMTP_PORT}, timeout=30) as server:
+                server.starttls()
+                server.login("${SMTP_USERNAME}", "${SMTP_PASSWORD}")
+                server.send_message(msg)
+        except Exception as e:
+            print("❌ ERROR: Failed to send email")
+            print(e)
+            sys.exit(1)
         EOF
