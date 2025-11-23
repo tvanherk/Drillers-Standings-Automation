@@ -21,7 +21,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4 openai
 
-     - name: Fetch EMSA Schedule Page
+    - name: Fetch EMSA Schedule Page
       run: |
         python << 'EOF'
         import requests
@@ -29,6 +29,7 @@ jobs:
 
         url = "https://emsamain.com/schedules/"
 
+        # FIX: Real browser user-agent to avoid 403 Forbidden
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -41,7 +42,7 @@ jobs:
             response = requests.get(url, headers=headers, timeout=30)
             response.raise_for_status()
         except Exception as e:
-            print("❌ ERROR: Failed to fetch schedule URL.")
+            print("❌ ERROR: Failed to fetch schedule URL")
             print(e)
             sys.exit(1)
 
@@ -77,7 +78,7 @@ jobs:
             sys.exit(1)
 
         if not text.strip():
-            print("❌ ERROR: Extracted text is empty — website may have changed or blocked scraping.")
+            print("❌ ERROR: Extracted text is empty — site may be dynamic")
             sys.exit(1)
 
         try:
@@ -108,7 +109,7 @@ jobs:
             sys.exit(1)
 
         if len(games_text.strip()) < 50:
-            print("❌ ERROR: games.txt appears too small — extraction likely failed.")
+            print("❌ ERROR: games.txt is too small — scraping likely failed")
             sys.exit(1)
 
         prompt = f"""
