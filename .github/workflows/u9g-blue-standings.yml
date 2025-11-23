@@ -1,8 +1,6 @@
 name: U9G Blue Standings Weekly Email
 
 on:
-  schedule:
-    - cron: "0 17 * * FRI"   # Friday at 5pm (UTC-adjust as needed)
   workflow_dispatch:
 
 jobs:
