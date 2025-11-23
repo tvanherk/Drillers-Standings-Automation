@@ -21,174 +21,21 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4 openai
 
-    - name: Create and run Fetch EMSA Schedule Page script
-      run: |
-        cat << 'EOF' > fetch_schedule.py
-import requests
-import sys
+    - name: Fetch EMSA Schedule Page
+      run: python .github/scripts/fetch_schedule.py
 
-url = 'https://emsamain.com/schedules/'
-headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-}
+    - name: Extract U9G Blue Games
+      run: python .github/scripts/extract_games.py
 
-try:
-    response = requests.get(url, headers=headers, timeout=30)
-    response.raise_for_status()
-except Exception as e:
-    print('❌ ERROR: Failed to fetch schedule URL')
-    print(e)
-    sys.exit(1)
-
-try:
-    with open('schedule.html', 'w', encoding='utf-8') as f:
-        f.write(response.text)
-except Exception as e:
-    print('❌ ERROR: Failed to save schedule.html')
-    print(e)
-    sys.exit(1)
-EOF
-        python fetch_schedule.py
-
-    - name: Create and run Extract U9G Blue Games script
-      run: |
-        cat << 'EOF' > extract_games.py
-from bs4 import BeautifulSoup
-import sys
-
-try:
-    with open('schedule.html', 'r', encoding='utf-8') as f:
-        html = f.read()
-except Exception as e:
-    print('❌ ERROR: Could not read schedule.html')
-    print(e)
-    sys.exit(1)
-
-try:
-    soup = BeautifulSoup(html, 'html.parser')
-    text = soup.get_text(separator='\n')
-except Exception as e:
-    print('❌ ERROR: Failed to parse HTML')
-    print(e)
-    sys.exit(1)
-
-if not text.strip():
-    print('❌ ERROR: Extracted text is empty — site may be dynamic')
-    sys.exit(1)
-
-try:
-    with open('games.txt', 'w', encoding='utf-8') as f:
-        f.write(text)
-except Exception as e:
-    print('❌ ERROR: Failed to save games.txt')
-    print(e)
-    sys.exit(1)
-EOF
-        python extract_games.py
-
-    - name: Create and run Generate Standings with ChatGPT script
+    - name: Generate Standings with ChatGPT
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      run: |
-        cat << 'EOF' > generate_standings.py
-import os, sys, openai
+      run: python .github/scripts/generate_standings.py
 
-api_key = os.environ.get('OPENAI_API_KEY')
-if not api_key:
-    print('❌ ERROR: Missing OPENAI_API_KEY environment variable')
-    sys.exit(1)
-
-client = openai.OpenAI(api_key=api_key)
-
-try:
-    with open('games.txt', 'r', encoding='utf-8') as f:
-        games_text = f.read()
-except Exception as e:
-    print('❌ ERROR: Could not read games.txt')
-    print(e)
-    sys.exit(1)
-
-if len(games_text.strip()) < 50:
-    print('❌ ERROR: games.txt is too small — scraping likely failed')
-    sys.exit(1)
-
-prompt = f'''
-Here is a full text dump of a soccer schedule webpage. Extract only completed
-games from the U9G Blue division. Ignore future-dated games and BYE games.
-Calculate standings using:
-- 3 points for a win
-- 1 point for a draw
-- 0 points for a loss
-
-Return a clean table in this format:
-
-Team | GP | W | D | L | GF | GA | GD | Points
-
-Here is the schedule text:
-{games_text}
-'''
-
-try:
-    response = client.chat.completions.create(
-        model='gpt-4o-mini',
-        messages=[{'role':'user','content':prompt}]
-    )
-    standings = response.choices[0].message['content']
-except Exception as e:
-    print('❌ ERROR: ChatGPT API call failed')
-    print(e)
-    sys.exit(1)
-
-if not standings.strip():
-    print('❌ ERROR: ChatGPT returned empty standings')
-    sys.exit(1)
-
-try:
-    with open('standings.txt', 'w', encoding='utf-8') as f:
-        f.write(standings)
-except Exception as e:
-    print('❌ ERROR: Failed to write standings.txt')
-    print(e)
-    sys.exit(1)
-EOF
-        python generate_standings.py
-
-    - name: Create and run Send Email with Gmail SMTP script
+    - name: Send Email with Gmail SMTP
       env:
         SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
         SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
         SMTP_PORT: ${{ secrets.SMTP_PORT }}
-      run: |
-        cat << 'EOF' > send_email.py
-import smtplib, sys, os
-from email.mime.text import MIMEText
-
-try:
-    with open('standings.txt', 'r', encoding='utf-8') as f:
-        standings = f.read()
-except Exception as e:
-    print('❌ ERROR: Could not read standings.txt')
-    print(e)
-    sys.exit(1)
-
-if not standings.strip():
-    print('❌ ERROR: standings.txt is empty')
-    sys.exit(1)
-
-msg = MIMEText(standings)
-msg['Subject'] = 'U9G Blue Weekly Standings'
-msg['From'] = os.environ.get('SMTP_USERNAME')
-msg['To'] = 'tonyvanherk@gmail.com'
-
-try:
-    with smtplib.SMTP(os.environ.get('SMTP_SERVER'), int(os.environ.get('SMTP_PORT')), timeout=30) as server:
-        server.starttls()
-        server.login(os.environ.get('SMTP_USERNAME'), os.environ.get('SMTP_PASSWORD'))
-        server.send_message(msg)
-except Exception as e:
-    print('❌ ERROR: Failed to send email')
-    print(e)
-    sys.exit(1)
-EOF
-        python send_email.py
+      run: python .github/scripts/send_email.py
