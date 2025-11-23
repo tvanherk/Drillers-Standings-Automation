@@ -23,101 +23,91 @@ jobs:
 
     - name: Fetch EMSA Schedule Page
       run: |
-        python - <<PYTHON
-import requests
-import sys
+        python -c "
+import requests, sys
 
-url = "https://emsamain.com/schedules/"
-
-headers = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
-}
+url = 'https://emsamain.com/schedules/'
+headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
 
 try:
     response = requests.get(url, headers=headers, timeout=30)
     response.raise_for_status()
 except Exception as e:
-    print("❌ ERROR: Failed to fetch schedule URL")
+    print('❌ ERROR: Failed to fetch schedule URL')
     print(e)
     sys.exit(1)
 
 try:
-    with open("schedule.html", "w", encoding="utf-8") as f:
+    with open('schedule.html', 'w', encoding='utf-8') as f:
         f.write(response.text)
 except Exception as e:
-    print("❌ ERROR: Failed to save schedule.html")
+    print('❌ ERROR: Failed to save schedule.html')
     print(e)
     sys.exit(1)
-PYTHON
+"
 
     - name: Extract U9G Blue Games
       run: |
-        python - <<PYTHON
+        python -c "
 from bs4 import BeautifulSoup
 import sys
 
 try:
-    with open("schedule.html", "r", encoding="utf-8") as f:
+    with open('schedule.html', 'r', encoding='utf-8') as f:
         html = f.read()
 except Exception as e:
-    print("❌ ERROR: Could not read schedule.html")
+    print('❌ ERROR: Could not read schedule.html')
     print(e)
     sys.exit(1)
 
 try:
-    soup = BeautifulSoup(html, "html.parser")
-    text = soup.get_text(separator="\n")
+    soup = BeautifulSoup(html, 'html.parser')
+    text = soup.get_text(separator='\n')
 except Exception as e:
-    print("❌ ERROR: Failed to parse HTML")
+    print('❌ ERROR: Failed to parse HTML')
     print(e)
     sys.exit(1)
 
 if not text.strip():
-    print("❌ ERROR: Extracted text is empty — site may be dynamic")
+    print('❌ ERROR: Extracted text is empty — site may be dynamic')
     sys.exit(1)
 
 try:
-    with open("games.txt", "w", encoding="utf-8") as f:
+    with open('games.txt', 'w', encoding='utf-8') as f:
         f.write(text)
 except Exception as e:
-    print("❌ ERROR: Failed to save games.txt")
+    print('❌ ERROR: Failed to save games.txt')
     print(e)
     sys.exit(1)
-PYTHON
+"
 
     - name: Generate Standings with ChatGPT
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       run: |
-        python - <<PYTHON
-import os
-import sys
-import openai
+        python -c "
+import os, sys, openai
 
-api_key = os.environ.get("OPENAI_API_KEY")
+api_key = os.environ.get('OPENAI_API_KEY')
 if not api_key:
-    print("❌ ERROR: Missing OPENAI_API_KEY environment variable")
+    print('❌ ERROR: Missing OPENAI_API_KEY environment variable')
     sys.exit(1)
 
 client = openai.OpenAI(api_key=api_key)
 
 try:
-    with open("games.txt", "r", encoding="utf-8") as f:
+    with open('games.txt', 'r', encoding='utf-8') as f:
         games_text = f.read()
 except Exception as e:
-    print("❌ ERROR: Could not read games.txt")
+    print('❌ ERROR: Could not read games.txt')
     print(e)
     sys.exit(1)
 
 if len(games_text.strip()) < 50:
-    print("❌ ERROR: games.txt is too small — scraping likely failed")
+    print('❌ ERROR: games.txt is too small — scraping likely failed')
     sys.exit(1)
 
-prompt = f\"\"\"
+prompt = f'''
 Here is a full text dump of a soccer schedule webpage. Extract only completed
 games from the U9G Blue division. Ignore future-dated games and BYE games.
 Calculate standings using:
@@ -131,31 +121,31 @@ Team | GP | W | D | L | GF | GA | GD | Points
 
 Here is the schedule text:
 {games_text}
-\"\"\"
+'''
 
 try:
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
+        model='gpt-4o-mini',
+        messages=[{'role':'user','content':prompt}]
     )
-    standings = response.choices[0].message["content"]
+    standings = response.choices[0].message['content']
 except Exception as e:
-    print("❌ ERROR: ChatGPT API call failed")
+    print('❌ ERROR: ChatGPT API call failed')
     print(e)
     sys.exit(1)
 
 if not standings or len(standings.strip()) == 0:
-    print("❌ ERROR: ChatGPT returned empty standings")
+    print('❌ ERROR: ChatGPT returned empty standings')
     sys.exit(1)
 
 try:
-    with open("standings.txt", "w", encoding="utf-8") as f:
+    with open('standings.txt', 'w', encoding='utf-8') as f:
         f.write(standings)
 except Exception as e:
-    print("❌ ERROR: Failed to write standings.txt")
+    print('❌ ERROR: Failed to write standings.txt')
     print(e)
     sys.exit(1)
-PYTHON
+"
 
     - name: Send Email with Gmail SMTP
       env:
@@ -164,36 +154,34 @@ PYTHON
         SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
         SMTP_PORT: ${{ secrets.SMTP_PORT }}
       run: |
-        python - <<PYTHON
-import smtplib
-import sys
+        python -c "
+import smtplib, sys, os
 from email.mime.text import MIMEText
-import os
 
 try:
-    with open("standings.txt", "r", encoding="utf-8") as f:
+    with open('standings.txt', 'r', encoding='utf-8') as f:
         standings = f.read()
 except Exception as e:
-    print("❌ ERROR: Could not read standings.txt")
+    print('❌ ERROR: Could not read standings.txt')
     print(e)
     sys.exit(1)
 
 if not standings.strip():
-    print("❌ ERROR: standings.txt is empty")
+    print('❌ ERROR: standings.txt is empty')
     sys.exit(1)
 
 msg = MIMEText(standings)
-msg["Subject"] = "U9G Blue Weekly Standings"
-msg["From"] = os.environ.get("SMTP_USERNAME")
-msg["To"] = "tonyvanherk@gmail.com"
+msg['Subject'] = 'U9G Blue Weekly Standings'
+msg['From'] = os.environ.get('SMTP_USERNAME')
+msg['To'] = 'tonyvanherk@gmail.com'
 
 try:
-    with smtplib.SMTP(os.environ.get("SMTP_SERVER"), int(os.environ.get("SMTP_PORT")), timeout=30) as server:
+    with smtplib.SMTP(os.environ.get('SMTP_SERVER'), int(os.environ.get('SMTP_PORT')), timeout=30) as server:
         server.starttls()
-        server.login(os.environ.get("SMTP_USERNAME"), os.environ.get("SMTP_PASSWORD"))
+        server.login(os.environ.get('SMTP_USERNAME'), os.environ.get('SMTP_PASSWORD'))
         server.send_message(msg)
 except Exception as e:
-    print("❌ ERROR: Failed to send email")
+    print('❌ ERROR: Failed to send email')
     print(e)
     sys.exit(1)
-PYTHON
+"
