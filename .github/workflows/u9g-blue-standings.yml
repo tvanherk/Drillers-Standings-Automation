@@ -21,13 +21,16 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4 openai
 
-    - name: Fetch EMSA Schedule Page
+    - name: Create and run Fetch EMSA Schedule Page script
       run: |
-        python -c "
-import requests, sys
+        cat << 'EOF' > fetch_schedule.py
+import requests
+import sys
 
 url = 'https://emsamain.com/schedules/'
-headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+}
 
 try:
     response = requests.get(url, headers=headers, timeout=30)
@@ -44,11 +47,12 @@ except Exception as e:
     print('❌ ERROR: Failed to save schedule.html')
     print(e)
     sys.exit(1)
-"
+EOF
+        python fetch_schedule.py
 
-    - name: Extract U9G Blue Games
+    - name: Create and run Extract U9G Blue Games script
       run: |
-        python -c "
+        cat << 'EOF' > extract_games.py
 from bs4 import BeautifulSoup
 import sys
 
@@ -79,13 +83,14 @@ except Exception as e:
     print('❌ ERROR: Failed to save games.txt')
     print(e)
     sys.exit(1)
-"
+EOF
+        python extract_games.py
 
-    - name: Generate Standings with ChatGPT
+    - name: Create and run Generate Standings with ChatGPT script
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       run: |
-        python -c "
+        cat << 'EOF' > generate_standings.py
 import os, sys, openai
 
 api_key = os.environ.get('OPENAI_API_KEY')
@@ -134,7 +139,7 @@ except Exception as e:
     print(e)
     sys.exit(1)
 
-if not standings or len(standings.strip()) == 0:
+if not standings.strip():
     print('❌ ERROR: ChatGPT returned empty standings')
     sys.exit(1)
 
@@ -145,16 +150,17 @@ except Exception as e:
     print('❌ ERROR: Failed to write standings.txt')
     print(e)
     sys.exit(1)
-"
+EOF
+        python generate_standings.py
 
-    - name: Send Email with Gmail SMTP
+    - name: Create and run Send Email with Gmail SMTP script
       env:
         SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
         SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
         SMTP_PORT: ${{ secrets.SMTP_PORT }}
       run: |
-        python -c "
+        cat << 'EOF' > send_email.py
 import smtplib, sys, os
 from email.mime.text import MIMEText
 
@@ -184,4 +190,5 @@ except Exception as e:
     print('❌ ERROR: Failed to send email')
     print(e)
     sys.exit(1)
-"
+EOF
+        python send_email.py
